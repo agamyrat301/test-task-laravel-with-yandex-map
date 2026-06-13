@@ -2,29 +2,49 @@
     <div class="max-w-3xl mx-auto px-4 py-10">
 
         <!-- Нет организации -->
-        <div v-if="!orgId && !loading" class="text-center py-20 text-gray-500 text-sm">
+        <div v-if="!org && !loading" class="text-center py-20 text-gray-500 text-sm">
             Сначала добавьте организацию в
             <RouterLink to="/" class="text-blue-600 hover:underline">настройках</RouterLink>.
         </div>
 
-        <template v-else>
-            <!-- Шапка с рейтингом -->
-            <div v-if="org" class="mb-6">
+        <!-- Синхронизация ещё идёт -->
+        <div v-else-if="isSyncing" class="text-center py-20">
+            <svg class="animate-spin h-8 w-8 text-blue-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <p class="text-sm text-gray-600 font-medium">Загружаем отзывы с Яндекс.Карт…</p>
+            <p class="text-xs text-gray-400 mt-1">Это займёт несколько минут</p>
+        </div>
+
+        <template v-else-if="org">
+            <!-- Шапка: рейтинг + счётчики -->
+            <div class="mb-8">
                 <h1 class="text-xl font-semibold text-gray-900">{{ org.name }}</h1>
-                <div class="flex items-center gap-3 mt-2">
+                <p v-if="org.address" class="text-sm text-gray-500 mt-0.5">{{ org.address }}</p>
+
+                <div class="flex items-center gap-3 mt-3">
                     <span class="text-4xl font-bold text-gray-900">{{ org.rating?.toFixed(1) ?? '—' }}</span>
                     <div>
                         <StarRating :value="org.rating ?? 0" />
-                        <div class="flex gap-4 mt-1 text-sm text-gray-500">
-                            <span><strong class="text-gray-800">{{ org.ratings_count }}</strong> оценок</span>
-                            <span><strong class="text-gray-800">{{ org.reviews_count }}</strong> отзывов</span>
+                        <div class="flex gap-5 mt-1 text-sm text-gray-500">
+                            <span>
+                                <strong class="text-gray-800">{{ org.ratings_count.toLocaleString('ru') }}</strong>
+                                оценок
+                            </span>
+                            <span>
+                                <strong class="text-gray-800">{{ org.reviews_count.toLocaleString('ru') }}</strong>
+                                отзывов с текстом
+                            </span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Список отзывов -->
-            <div v-if="loading" class="text-center py-16 text-gray-400 text-sm">Загружаем отзывы…</div>
+            <!-- Загрузка страницы -->
+            <div v-if="loading" class="text-center py-16 text-gray-400 text-sm">
+                Загружаем…
+            </div>
 
             <template v-else-if="reviews.length">
                 <div class="space-y-4 mb-8">
@@ -40,10 +60,8 @@
                             </div>
                             <StarRating :value="review.rating" />
                         </div>
-                        <p v-if="review.text" class="text-sm text-gray-700 leading-relaxed">
-                            {{ review.text }}
-                        </p>
-                        <p v-else class="text-xs text-gray-400 italic">Без текста</p>
+                        <p v-if="review.text" class="text-sm text-gray-700 leading-relaxed">{{ review.text }}</p>
+                        <p v-else class="text-xs text-gray-400 italic">Оценка без текста</p>
                     </div>
                 </div>
 
@@ -56,8 +74,8 @@
                     >← Назад</button>
 
                     <span class="text-gray-500">
-                        Страница {{ pagination.current_page }} из {{ pagination.last_page }}
-                        <span class="ml-2 text-gray-400">(всего {{ pagination.total }})</span>
+                        Стр. {{ pagination.current_page }} / {{ pagination.last_page }}
+                        <span class="text-gray-400 ml-2">{{ pagination.total.toLocaleString('ru') }} отзывов</span>
                     </span>
 
                     <button
@@ -74,26 +92,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { organization as orgApi } from '@/api'
 import StarRating from '@/components/StarRating.vue'
 
 const org     = ref(null)
-const orgId   = ref(null)
 const reviews = ref([])
 const loading = ref(true)
 
-const pagination = ref({
-    current_page: 1,
-    last_page:    1,
-    total:        0,
-})
+const pagination = ref({ current_page: 1, last_page: 1, total: 0 })
+
+const isSyncing = computed(() =>
+    org.value?.sync_status === 'pending' || org.value?.sync_status === 'syncing'
+)
 
 onMounted(async () => {
     const { data } = await orgApi.get()
-    if (data.organization) {
-        org.value   = data.organization
-        orgId.value = data.organization.id
+    org.value = data.organization
+
+    if (org.value && !isSyncing.value) {
         await loadReviews(1)
     } else {
         loading.value = false
@@ -103,8 +120,8 @@ onMounted(async () => {
 async function loadReviews(page) {
     loading.value = true
     try {
-        const { data } = await orgApi.reviews(orgId.value, page)
-        reviews.value = data.data
+        const { data } = await orgApi.reviews(org.value.id, page)
+        reviews.value  = data.data
         pagination.value = {
             current_page: data.current_page,
             last_page:    data.last_page,

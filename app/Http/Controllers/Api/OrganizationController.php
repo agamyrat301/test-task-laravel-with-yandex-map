@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncOrganizationJob;
 use App\Models\Organization;
 use App\Services\YandexMapsService;
 use Illuminate\Http\Request;
@@ -11,9 +12,6 @@ class OrganizationController extends Controller
 {
     public function __construct(private YandexMapsService $yandex) {}
 
-    /**
-     * Текущая организация аутентифицированного пользователя.
-     */
     public function show(Request $request)
     {
         $org = $request->user()->organizations()->latest()->first();
@@ -21,9 +19,6 @@ class OrganizationController extends Controller
         return response()->json(['organization' => $org]);
     }
 
-    /**
-     * Сохранить URL организации и запустить синхронизацию.
-     */
     public function store(Request $request)
     {
         $request->validate([
@@ -42,26 +37,27 @@ class OrganizationController extends Controller
 
         $org = $request->user()->organizations()->updateOrCreate(
             ['yandex_org_id' => $orgId],
-            ['yandex_url' => $request->url]
+            [
+                'yandex_url'  => $request->url,
+                'sync_status' => 'pending',
+                'sync_error'  => null,
+            ]
         );
 
-        $this->yandex->sync($org);
+        // Отвечаем мгновенно — парсинг идёт в очереди (до 10 мин для ~600 отзывов)
+        SyncOrganizationJob::dispatch($org);
 
-        $org->refresh();
-
-        return response()->json(['organization' => $org], 201);
+        return response()->json(['organization' => $org->refresh()], 201);
     }
 
-    /**
-     * Принудительная повторная синхронизация.
-     */
     public function sync(Request $request, Organization $organization)
     {
         $this->authorize('update', $organization);
 
-        $this->yandex->sync($organization);
-        $organization->refresh();
+        // Повторная синхронизация тоже через очередь
+        $organization->update(['sync_status' => 'pending', 'sync_error' => null]);
+        SyncOrganizationJob::dispatch($organization);
 
-        return response()->json(['organization' => $organization]);
+        return response()->json(['organization' => $organization->refresh()]);
     }
 }

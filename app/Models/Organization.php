@@ -13,6 +13,7 @@ class Organization extends Model
         'user_id', 'yandex_url', 'yandex_org_id',
         'name', 'address', 'rating',
         'ratings_count', 'reviews_count', 'last_synced_at',
+        'sync_status', 'sync_error',
     ];
 
     protected $casts = [
