@@ -134,19 +134,20 @@ async function run() {
             }).filter(Boolean);
         });
 
-        // Click all "read more" buttons inside review cards to expand truncated text
+        // Click "read more" buttons scoped inside each review card to avoid
+        // accidentally clicking the page-level "load more reviews" button
         const expandReviewTexts = () => page.evaluate(() => {
             const selectors = [
                 '.business-review-view__more',
                 '.business-review-view__expand',
                 '.business-review-view__show-more',
-                '[class*="review"][class*="more"]',
-                '[class*="review"][class*="expand"]',
             ];
             let clicked = 0;
-            selectors.forEach(sel => {
-                document.querySelectorAll(sel).forEach(btn => {
-                    if (btn.offsetParent !== null) { btn.click(); clicked++; }
+            document.querySelectorAll('.business-review-view').forEach(card => {
+                selectors.forEach(sel => {
+                    card.querySelectorAll(sel).forEach(btn => {
+                        if (btn.offsetParent !== null) { btn.click(); clicked++; }
+                    });
                 });
             });
             return clicked;
