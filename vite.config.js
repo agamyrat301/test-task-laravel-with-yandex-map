@@ -14,6 +14,8 @@ export default defineConfig({
         alias: { '@': '/resources/js' },
     },
     server: {
-        host: '0.0.0.0', // required when running inside Docker
+        host: '0.0.0.0',
+        origin: 'http://localhost:5173',
+        cors: { origin: 'http://localhost:8000' },
     },
 });
