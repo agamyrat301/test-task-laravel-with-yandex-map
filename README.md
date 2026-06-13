@@ -43,13 +43,9 @@ cp .env.example .env
 
 # 2. Соберите образы и запустите контейнеры
 docker compose up -d --build
+# Ключ и миграции запускаются автоматически при старте контейнера
 
-# 3. Первичная настройка (один раз)
-docker compose exec app php artisan key:generate
-docker compose exec app php artisan migrate --seed
-docker compose exec app php artisan storage:link
-
-# 4. Откройте в браузере
+# 3. Откройте в браузере
 # http://localhost:8000  — приложение (nginx → php-fpm)
 # http://localhost:5173  — Vite HMR (dev-режим)
 ```
