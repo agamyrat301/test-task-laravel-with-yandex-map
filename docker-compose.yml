@@ -50,13 +50,13 @@ services:
       - "5173:5173"
     volumes:
       - .:/app
-    command: npm run dev -- --host
+    command: sh -c "npm install && npm run dev -- --host"
 
   # ── MySQL ─────────────────────────────────────────────────────────────────
   db:
     image: mysql:8.0
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-yandex_laravel}
       MYSQL_USER: ${DB_USERNAME:-laravel}
