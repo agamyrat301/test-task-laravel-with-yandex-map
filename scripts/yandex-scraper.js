@@ -153,24 +153,19 @@ async function run() {
             return clicked;
         });
 
-        let prevCount = 0;
+        // Hard cap: 60 scrolls × ~2.8 s = ~3 min max regardless of org size
+        const MAX_ITERS = 60;
         let stableIter = 0;
+        let iter = 0;
 
-        while (seen.size < MAX_REVIEWS && stableIter < 3) {
-            await expandReviewTexts();
-            await new Promise(r => setTimeout(r, 400));
+        // Seed with whatever is visible before the first scroll
+        await expandReviewTexts();
+        await new Promise(r => setTimeout(r, 300));
+        (await extractCurrentReviews()).forEach(r => seen.set(r.id, r));
 
-            const batch = await extractCurrentReviews();
-            batch.forEach(r => seen.set(r.id, r));
-
-            if (seen.size === prevCount) {
-                stableIter++;
-            } else {
-                stableIter = 0;
-            }
-            prevCount = seen.size;
-
-            if (seen.size >= MAX_REVIEWS) break;
+        while (seen.size < MAX_REVIEWS && stableIter < 3 && iter < MAX_ITERS) {
+            iter++;
+            const countBeforeScroll = seen.size;
 
             // Scroll to the bottom of the sidebar to trigger lazy-loading of next batch
             await page.evaluate(() => {
@@ -182,6 +177,19 @@ async function run() {
                 }
             });
             await new Promise(r => setTimeout(r, SCROLL_WAIT_MS));
+
+            // Expand "read more" on any newly loaded cards, then extract
+            await expandReviewTexts();
+            await new Promise(r => setTimeout(r, 300));
+            (await extractCurrentReviews()).forEach(r => seen.set(r.id, r));
+
+            // Stability is checked against count before scroll so that expand-button
+            // clicks on already-loaded cards cannot reset the counter indefinitely.
+            if (seen.size === countBeforeScroll) {
+                stableIter++;
+            } else {
+                stableIter = 0;
+            }
         }
 
         process.stdout.write(JSON.stringify({
