@@ -41,8 +41,18 @@
                 </div>
             </div>
 
+            <!-- Ошибка загрузки страницы -->
+            <div v-if="error" class="bg-red-50 border border-red-200 rounded-xl p-5 mb-4">
+                <p class="text-sm font-medium text-red-800">Не удалось загрузить отзывы</p>
+                <p class="text-xs text-red-600 mt-1">{{ error }}</p>
+                <button
+                    @click="loadReviews(pagination.current_page)"
+                    class="mt-3 text-xs text-red-700 underline"
+                >Повторить</button>
+            </div>
+
             <!-- Загрузка страницы -->
-            <div v-if="loading" class="text-center py-16 text-gray-400 text-sm">
+            <div v-else-if="loading" class="text-center py-16 text-gray-400 text-sm">
                 Загружаем…
             </div>
 
@@ -99,6 +109,7 @@ import StarRating from '@/components/StarRating.vue'
 const org     = ref(null)
 const reviews = ref([])
 const loading = ref(true)
+const error   = ref(null)
 
 const pagination = ref({ current_page: 1, last_page: 1, total: 0 })
 
@@ -119,6 +130,7 @@ onMounted(async () => {
 
 async function loadReviews(page) {
     loading.value = true
+    error.value   = null
     try {
         const { data } = await orgApi.reviews(org.value.id, page)
         reviews.value  = data.data
@@ -127,6 +139,8 @@ async function loadReviews(page) {
             last_page:    data.last_page,
             total:        data.total,
         }
+    } catch (err) {
+        error.value = err.response?.data?.message ?? 'Неизвестная ошибка. Попробуйте обновить страницу.'
     } finally {
         loading.value = false
     }

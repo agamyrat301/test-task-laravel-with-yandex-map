@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
+use App\Exceptions\YandexParseException;
 use App\Models\Organization;
 use App\Models\Review;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
+use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 
 /**
  * Получает данные организации и все отзывы с Яндекс.Карт без официального API.
@@ -132,34 +133,64 @@ class YandexMapsService
     {
         $url = "https://yandex.ru/maps/org/{$orgId}/reviews/";
 
-        $response = $this->http->get($url, [
-            'headers' => array_merge(self::BROWSER_HEADERS, [
-                'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Sec-Fetch-Dest'  => 'document',
-                'Sec-Fetch-Mode'  => 'navigate',
-                'Sec-Fetch-Site'  => 'none',
-                'Sec-Fetch-User'  => '?1',
-            ]),
-        ]);
+        try {
+            $response = $this->http->get($url, [
+                'headers' => array_merge(self::BROWSER_HEADERS, [
+                    'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Sec-Fetch-Dest'  => 'document',
+                    'Sec-Fetch-Mode'  => 'navigate',
+                    'Sec-Fetch-Site'  => 'none',
+                    'Sec-Fetch-User'  => '?1',
+                ]),
+            ]);
+        } catch (ConnectException $e) {
+            throw new YandexParseException(
+                'Не удалось подключиться к Яндекс.Картам: ' . $e->getMessage()
+            );
+        }
 
         $status = $response->getStatusCode();
-        if ($status !== 200) {
-            throw new RuntimeException("Яндекс.Карты вернул HTTP {$status} для org {$orgId}.");
-        }
+
+        match (true) {
+            $status === 404 => throw new YandexParseException(
+                'Организация не найдена (HTTP 404). Убедитесь, что ссылка ведёт на существующую карточку.'
+            ),
+            $status === 403 => throw new YandexParseException(
+                'Доступ запрещён (HTTP 403). Яндекс заблокировал запрос — попробуйте позже.'
+            ),
+            $status === 429 => throw new YandexParseException(
+                'Слишком много запросов (HTTP 429). Подождите несколько минут и повторите синхронизацию.'
+            ),
+            $status >= 500  => throw new YandexParseException(
+                "Яндекс.Карты недоступны (HTTP {$status}). Попробуйте позже."
+            ),
+            $status !== 200 => throw new YandexParseException(
+                "Неожиданный ответ от Яндекс.Карт (HTTP {$status})."
+            ),
+            default => null,
+        };
 
         $html = (string) $response->getBody();
 
-        if (empty($html)) {
-            throw new RuntimeException('Пустой ответ от Яндекс.Карт.');
+        if (empty(trim($html))) {
+            throw new YandexParseException('Яндекс.Карты вернул пустой ответ.');
         }
 
-        return $this->parseHtml($html);
+        // Яндекс иногда возвращает страницу капчи вместо данных
+        if (str_contains($html, 'showcaptcha') || str_contains($html, 'captcha')) {
+            throw new YandexParseException(
+                'Яндекс запросил капчу — запрос воспринят как бот. Попробуйте позже.'
+            );
+        }
+
+        return $this->parseHtml($html, $orgId);
     }
 
     /**
      * Разбирает HTML страницы: ищет embedded JSON, CSRF-токен, данные организации.
+     * Бросает YandexParseException если не удалось распознать данные организации.
      */
-    private function parseHtml(string $html): array
+    private function parseHtml(string $html, string $orgId = ''): array
     {
         $result = [
             'csrf_token'    => '',
@@ -213,6 +244,22 @@ class YandexMapsService
             if (preg_match('/"ratingValue"\s*:\s*"?([\d.]+)"?/', $html, $m)) {
                 $result['rating'] = (float) $m[1];
             }
+        }
+
+        // Если после всех попыток название не найдено — разметка изменилась
+        // или ссылка ведёт не на карточку организации
+        if (empty($result['name'])) {
+            Log::warning('YandexMaps: не удалось извлечь данные из HTML', [
+                'orgId'       => $orgId,
+                'html_length' => strlen($html),
+                'html_head'   => substr($html, 0, 500),
+            ]);
+            throw new YandexParseException(
+                'Не удалось распознать данные организации. ' .
+                'Возможные причины: разметка страницы изменилась, ' .
+                'ссылка ведёт не на карточку организации, ' .
+                'или Яндекс отдал нестандартный ответ.'
+            );
         }
 
         return $result;
@@ -352,6 +399,9 @@ class YandexMapsService
 
             return $this->parseBatch($json);
 
+        } catch (ConnectException $e) {
+            Log::warning("YandexMaps: connection error at from={$from}", ['error' => $e->getMessage()]);
+            return ['reviews' => []]; // сетевая ошибка — прерываем пагинацию, сохраняем что успели
         } catch (GuzzleException $e) {
             Log::warning("YandexMaps: fetchBatch exception at from={$from}", ['error' => $e->getMessage()]);
             return ['reviews' => []];
