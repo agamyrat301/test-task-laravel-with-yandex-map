@@ -16,6 +16,7 @@ services:
     build: .
     volumes:
       - .:/var/www/html
+      - /var/www/html/vendor         # keep container vendor separate
       - /var/www/html/node_modules   # keep container node_modules separate
     environment:
       - DB_HOST=db
@@ -32,6 +33,7 @@ services:
     command: php artisan queue:work --sleep=3 --tries=3 --timeout=600
     volumes:
       - .:/var/www/html
+      - /var/www/html/vendor
       - /var/www/html/node_modules
     environment:
       - DB_HOST=db
