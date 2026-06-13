@@ -25,5 +25,9 @@ COPY . .
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 RUN npm install
 
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 9000
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["php-fpm"]
