@@ -16,22 +16,18 @@ class AuthController extends Controller
             'password' => 'required|string',
         ]);
 
-        if (!Auth::attempt($request->only('email', 'password'))) {
+        if (!Auth::attempt($request->only('email', 'password'), true)) {
             throw ValidationException::withMessages([
                 'email' => ['Неверный логин или пароль.'],
             ]);
         }
 
-        $request->session()->regenerate();
-
         return response()->json(['user' => Auth::user()]);
     }
 
-    public function logout(Request $request)
+    public function logout()
     {
         Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
 
         return response()->json(['message' => 'OK']);
     }
