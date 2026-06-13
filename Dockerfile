@@ -23,7 +23,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 COPY . .
 
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader
-RUN npm install
+RUN npm install && npm run build
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
