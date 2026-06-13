@@ -16,6 +16,7 @@
     "dependencies": {
         "@vitejs/plugin-vue": "^6.0.7",
         "pinia": "^3.0.4",
+        "puppeteer": "^25.1.0",
         "vue": "^3.5.38",
         "vue-router": "^4.6.4"
     }
