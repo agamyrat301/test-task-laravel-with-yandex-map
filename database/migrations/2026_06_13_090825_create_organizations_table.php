@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('organizations', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('yandex_url');
+            $table->string('yandex_org_id');
+            $table->string('name')->nullable();
+            $table->string('address')->nullable();
+            $table->decimal('rating', 3, 1)->nullable();
+            $table->unsignedInteger('ratings_count')->default(0);
+            $table->unsignedInteger('reviews_count')->default(0);
+            $table->timestamp('last_synced_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('organizations');
+    }
+};
