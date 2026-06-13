@@ -1,0 +1,74 @@
+services:
+
+  # ── Nginx — web server ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+
+  # ── PHP-FPM — Laravel app ─────────────────────────────────────────────────
+  app:
+    build: .
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/node_modules   # keep container node_modules separate
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Queue worker — runs SyncOrganizationJob (uses Puppeteer) ─────────────
+  queue:
+    build: .
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=600
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/node_modules
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Vite — frontend dev server (HMR) ─────────────────────────────────────
+  vite:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+    command: npm run dev -- --host
+
+  # ── MySQL ─────────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-yandex_laravel}
+      MYSQL_USER: ${DB_USERNAME:-laravel}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: rootsecret
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dbdata:
