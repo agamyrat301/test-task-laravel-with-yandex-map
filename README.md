@@ -1,67 +1,142 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Тестовое задание: отзывы с Яндекс.Карт
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Стек: **Laravel 10** (API) + **Vue 3** (SPA) + **Tailwind CSS**.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Быстрый старт
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+```bash
+# 1. Зависимости
+composer install
+npm install
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+# 2. Переменные окружения
+cp .env.example .env
+# Заполните DB_DATABASE, DB_USERNAME, DB_PASSWORD
 
-## Learning Laravel
+# 3. Ключ и БД
+php artisan key:generate
+php artisan migrate --seed
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+# 4. Запуск
+php artisan serve          # http://localhost:8000
+npm run dev                # Vite dev-сервер (HMR)
+```
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+Логин seed-пользователя: `admin@example.com` / `password`
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-## Laravel Sponsors
+## Экраны
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+| Маршрут | Описание |
+|---------|----------|
+| `/login` | Аутентификация (Sanctum SPA cookie-сессия) |
+| `/` | Настройки — вставить URL карточки, просмотреть рейтинг и счётчики |
+| `/reviews` | Список всех отзывов, пагинация 50/страницу |
 
-### Premium Partners
+---
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+## Как работает парсер
 
-## Contributing
+### Почему не headless-браузер
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Headless (Puppeteer / Playwright) — самый надёжный способ, но:
+- требует Node.js-процесс рядом с PHP-приложением;
+- в 5–10× медленнее при сборе 600 отзывов;
+- избыточен, пока Яндекс отдаёт нужные данные через HTTP.
 
-## Code of Conduct
+Выбранный подход — **имитация реального браузера через GuzzleHttp** — достаточен, потому что Яндекс включает server-side rendered данные в HTML страницы (для SEO-краулеров). Защита от ботов срабатывает на подозрительные UA и отсутствие cookie, а не на факт HTTP-запроса.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Алгоритм (`app/Services/YandexMapsService.php`)
 
-## Security Vulnerabilities
+**Шаг 1 — Инициализация сессии**
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```
+GET https://yandex.ru/maps/org/{orgId}/reviews/
+```
 
-## License
+- Заголовки имитируют Chrome 120 (`User-Agent`, `Sec-Ch-Ua`, `Sec-Fetch-*`)
+- `GuzzleHttp\Cookie\CookieJar` сохраняет все cookie Яндекса:  
+  `yandexuid`, `i`, `Session_id`, `yandex_csyr` и др.
+- Из HTML-ответа извлекаем:
+  - **CSRF-токен** — паттерн `"csrfToken":"<value>"` внутри embedded JSON
+  - **Данные организации** — `<script id="store-prefetch" type="application/json">`  
+    содержит рейтинг, число оценок (`votes`), число отзывов с текстом (`reviews`), адрес
+  - Fallback: OpenGraph-теги и Schema.org microdata
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-# test-task-laravel-with-yandex-map
+**Шаг 2 — Итерация по API отзывов**
+
+```
+GET https://yandex.ru/maps/api/business/fetchReviews
+    ?businessId={id}&from={offset}&limit=60&lang=ru_RU&csrfToken={token}
+```
+
+Этот XHR-запрос браузер делает при прокрутке страницы. Мы воспроизводим его с теми же cookie из шага 1 и CSRF-токеном. Одна итерация = 60 отзывов, задержка 600 мс между запросами, лимит 700 записей.
+
+На каждый отзыв сохраняем: `author`, `rating`, `text`, `reviewed_at`, `yandex_review_id`.  
+При повторной синхронизации используется `updateOrCreate` по `yandex_review_id` — дубликатов нет.
+
+### Разделение `ratings_count` и `reviews_count`
+
+Яндекс разделяет:
+- **оценки** (`votes` в блоке `rating`) — все звёзды, включая без текста
+- **отзывы** (`reviews` в блоке `rating`) — только с текстом
+
+Оба числа хранятся в таблице `organizations` и отображаются отдельно.
+
+### Обработка rate limit и ошибок
+
+- HTTP 429 → sleep(5s) → один повтор
+- Непустой ответ не-JSON → предупреждение в `laravel.log`, пропуск батча
+- Любой `GuzzleException` → предупреждение в лог, пропуск батча
+
+### Если Яндекс начнёт блокировать
+
+Варианты эскалации по сложности:
+1. **Ротация User-Agent** — добавить пул браузерных UA в конфиг
+2. **Proxy** — подключить через `GuzzleHttp` опцию `proxy`
+3. **Headless-браузер** — заменить `YandexMapsService::initSession()` на  
+   вызов Node.js-скрипта через `Browsershot` или `symfony/panther`;  
+   остальной код (нормализация, сохранение) остаётся без изменений
+
+---
+
+## API
+
+| Метод | URL | Описание |
+|-------|-----|----------|
+| `POST` | `/api/login` | Вход (email + password) |
+| `POST` | `/api/logout` | Выход |
+| `GET`  | `/api/user` | Текущий пользователь |
+| `GET`  | `/api/organization` | Карточка организации |
+| `POST` | `/api/organization` | Сохранить URL + запустить синхронизацию |
+| `POST` | `/api/organization/{id}/sync` | Повторная синхронизация |
+| `GET`  | `/api/organization/{id}/reviews?page=N` | Отзывы, 50/страницу |
+
+---
+
+## Структура проекта
+
+```
+app/
+├── Http/Controllers/Api/
+│   ├── AuthController.php          — login / logout / user
+│   ├── OrganizationController.php  — сохранение URL, синхронизация
+│   └── ReviewController.php        — список отзывов с пагинацией
+├── Models/
+│   ├── Organization.php
+│   └── Review.php
+└── Services/
+    └── YandexMapsService.php       — вся логика парсинга
+
+resources/js/
+├── api/index.js          — axios-клиент
+├── stores/auth.js        — Pinia store
+├── router/index.js       — Vue Router + guard
+└── views/
+    ├── LoginView.vue
+    ├── SettingsView.vue
+    └── ReviewsView.vue
+```
