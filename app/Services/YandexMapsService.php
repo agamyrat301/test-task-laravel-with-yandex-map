@@ -215,8 +215,10 @@ class YandexMapsService
 
         // ----- Embedded JSON -----
         // Яндекс кладёт состояние SPA в <script id="store-prefetch" type="application/json">
+        // Используем жадный квантор {.+} — иначе non-greedy {.+?} остановится
+        // на первой закрывающей скобке внутри вложенного JSON-объекта.
         if (preg_match(
-            '/<script[^>]+id=["\']store-prefetch["\'][^>]*>\s*(\{.+?\})\s*<\/script>/s',
+            '/<script[^>]+id=["\']store-prefetch["\'][^>]*>\s*(\{.+\})\s*<\/script>/s',
             $html,
             $m
         )) {
@@ -228,7 +230,7 @@ class YandexMapsService
 
         // Fallback: window.__REDUX_STATE__ = {...}
         if (!$result['name']
-            && preg_match('/window\.__REDUX_STATE__\s*=\s*(\{.+?\});\s*(?:<\/script>|window\.)/s', $html, $m)
+            && preg_match('/window\.__REDUX_STATE__\s*=\s*(\{.+\});\s*(?:<\/script>|window\.)/s', $html, $m)
         ) {
             $state = json_decode($m[1], true);
             if (is_array($state)) {
@@ -354,7 +356,7 @@ class YandexMapsService
         return $all;
     }
 
-    private function fetchBatch(string $orgId, int $from, int $limit, string $csrfToken): array
+    private function fetchBatch(string $orgId, int $from, int $limit, string $csrfToken, int $retries = 0): array
     {
         try {
             $response = $this->http->get('https://yandex.ru/maps/api/business/fetchReviews', [
@@ -366,22 +368,32 @@ class YandexMapsService
                     'Sec-Fetch-Mode'   => 'cors',
                     'Sec-Fetch-Site'   => 'same-origin',
                 ]),
-                'query' => array_filter([
-                    'businessId' => $orgId,
-                    'from'       => $from,
-                    'limit'      => $limit,
-                    'lang'       => 'ru_RU',
-                    'csrfToken'  => $csrfToken ?: null,
-                ]),
+                'query' => array_merge(
+                    [
+                        'businessId' => $orgId,
+                        'from'       => $from,
+                        'limit'      => $limit,
+                        'lang'       => 'ru_RU',
+                    ],
+                    // CSRF-токен включаем только если он есть — array_filter дропнул бы
+                    // пустую строку, но также дропнул бы "0", поэтому проверяем явно
+                    $csrfToken !== '' ? ['csrfToken' => $csrfToken] : []
+                ),
             ]);
 
             $status = $response->getStatusCode();
 
             if ($status === 429) {
-                Log::warning("YandexMaps: rate limit hit (from={$from}), sleeping 5s");
-                sleep(5);
-                // Один повтор
-                return $this->fetchBatch($orgId, $from, $limit, $csrfToken);
+                // Не рекурсируем — это привело бы к краше при затяжной блокировке.
+                // Два повтора с нарастающей паузой, потом возвращаем пустой результат.
+                if ($retries < 2) {
+                    $pause = ($retries + 1) * 5;
+                    Log::warning("YandexMaps: rate limit (from={$from}), retry {$retries}, sleep {$pause}s");
+                    sleep($pause);
+                    return $this->fetchBatch($orgId, $from, $limit, $csrfToken, $retries + 1);
+                }
+                Log::warning("YandexMaps: rate limit after retries, giving up at from={$from}");
+                return ['reviews' => []];
             }
 
             if ($status !== 200) {
@@ -484,7 +496,9 @@ class YandexMapsService
         } elseif (is_string($dateRaw) && strlen($dateRaw) >= 10) {
             $date = substr($dateRaw, 0, 10);
         } else {
-            $date = now()->toDateString();
+            // Дату не удалось разобрать — пропускаем отзыв, чтобы не записывать
+            // в БД сегодняшнее число вместо реальной даты публикации.
+            return null;
         }
 
         return [

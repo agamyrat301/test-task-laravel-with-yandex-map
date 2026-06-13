@@ -35,8 +35,11 @@ class OrganizationController extends Controller
 
         $orgId = $this->yandex->extractOrgId($request->url);
 
+        // user_id явно в ключе поиска — без него updateOrCreate полагается только
+        // на скоуп relationship; если код переедет в Job без контекста пользователя,
+        // можно было бы случайно обновить запись другого юзера с тем же org_id.
         $org = $request->user()->organizations()->updateOrCreate(
-            ['yandex_org_id' => $orgId],
+            ['yandex_org_id' => $orgId, 'user_id' => $request->user()->id],
             [
                 'yandex_url'  => $request->url,
                 'sync_status' => 'pending',
