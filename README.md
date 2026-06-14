@@ -45,7 +45,10 @@ cp .env.example .env
 docker compose up -d --build
 # Ключ и миграции запускаются автоматически при старте контейнера
 
-# 3. Откройте в браузере
+# 3. Засейте БД тестовыми данными
+docker compose exec app php artisan migrate --seed
+
+# 4. Откройте в браузере
 # http://localhost:8000  — приложение (nginx → php-fpm)
 # http://localhost:5173  — Vite HMR (dev-режим)
 ```
