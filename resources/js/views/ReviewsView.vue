@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { organization as orgApi } from '@/api'
 import StarRating from '@/components/StarRating.vue'
 
@@ -117,12 +117,30 @@ const isSyncing = computed(() =>
     org.value?.sync_status === 'pending' || org.value?.sync_status === 'syncing'
 )
 
+let pollTimer = null
+
+function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
+onUnmounted(stopPolling)
+
 onMounted(async () => {
     const { data } = await orgApi.get()
     org.value = data.organization
 
     if (org.value && !isSyncing.value) {
         await loadReviews(1)
+    } else if (isSyncing.value) {
+        loading.value = false
+        pollTimer = setInterval(async () => {
+            const { data } = await orgApi.get()
+            org.value = data.organization
+            if (!isSyncing.value) {
+                stopPolling()
+                if (org.value.sync_status === 'done') await loadReviews(1)
+            }
+        }, 3000)
     } else {
         loading.value = false
     }

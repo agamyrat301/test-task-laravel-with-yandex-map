@@ -70,9 +70,8 @@ class YandexMapsService
             }
 
             Review::updateOrCreate(
-                ['yandex_review_id' => $review['id']],
+                ['organization_id' => $org->id, 'yandex_review_id' => $review['id']],
                 [
-                    'organization_id' => $org->id,
                     'author'          => $review['author'],
                     'rating'          => $review['rating'],
                     'text'            => $review['text'],

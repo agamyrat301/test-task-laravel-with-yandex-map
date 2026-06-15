@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
-            $table->string('yandex_review_id')->nullable()->unique();
+            $table->string('yandex_review_id')->nullable();
+            $table->unique(['organization_id', 'yandex_review_id']);
             $table->string('author');
             $table->unsignedTinyInteger('rating');
             $table->text('text')->nullable();

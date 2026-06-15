@@ -252,5 +252,16 @@ resources/js/
 
 database/migrations/
 ├── ..._create_organizations_table.php  — yandex_url, rating, ratings_count, reviews_count, sync_status
-└── ..._create_reviews_table.php        — yandex_review_id (unique), author, rating, text, reviewed_at
+└── ..._create_reviews_table.php        — yandex_review_id (composite unique per org), author, rating, text, reviewed_at
 ```
+
+---
+
+## Что доделал бы при наличии времени
+
+- **WebSocket вместо поллинга** — сейчас фронт опрашивает `/api/organization` каждые 3 сек пока идёт синхронизация. Laravel Echo + Reverb (или Pusher) позволили бы серверу самому толкнуть событие `SyncCompleted` в момент завершения — без лишних запросов.
+- **Rate limiting на повторную синхронизацию** — эндпоинт `POST /organization/{id}/sync` сейчас ничем не ограничен. Достаточно одной проверки `sync_status IN ('pending','syncing') → 422` плюс throttle-middleware, чтобы нельзя было навесить несколько Puppeteer-процессов одновременно.
+- **Поддержка нескольких организаций** — схема БД это уже позволяет (`organizations.user_id`), но UI и контроллер рассчитаны на одну. Добавил бы список карточек на странице настроек.
+- **Scheduled re-sync** — ежедневное обновление отзывов через `php artisan schedule:run` без участия пользователя.
+- **Короткие ссылки Яндекса** — вида `https://yandex.ru/maps/-/CBddnomkBD`. Сейчас валидатор принимает только полный формат `/maps/org/{slug}/{id}`. Нужен HTTP-редирект, чтобы разресолвить короткую ссылку и вытащить числовой ID.
+- **Тесты** — минимум: unit-тест для `YandexMapsService::validateUrl()` и `normalizeReview()`, feature-тест для `POST /api/organization` с мокнутым `SyncOrganizationJob`.
