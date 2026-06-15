@@ -55,10 +55,10 @@ async function run() {
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
             '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
         );
-        await page.setExtraHTTPHeaders({ 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7' });
+        await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9,ru;q=0.7' });
 
-        // Navigate — yandex.ru redirects to yandex.com; both render the same content
-        await page.goto(`https://yandex.ru/maps/org/${orgId}/reviews/`, {
+        // Use yandex.com to get English OG tags (rating/counts regex depends on English text)
+        await page.goto(`https://yandex.com/maps/org/${orgId}/reviews/`, {
             waitUntil: 'networkidle2',
             timeout: 30000,
         });
@@ -83,19 +83,28 @@ async function run() {
             const title = og('og:title');
 
             const name = document.querySelector('h1')?.innerText?.trim()
-                      || title.replace(/^Reviews of /, '').split(',')[0].split('—')[0].trim()
+                      || title.replace(/^Reviews of /, '').replace(/^Отзывы о[^,«»]+[«»][^«»]+[«»],?\s*/, '').split('—')[0].split(',')[0].trim()
                       || null;
 
-            // "Rated X.X based on YYYYY ratings and ZZZZ reviews"
-            const countMatch   = desc.match(/based on ([\d\s,]+) ratings? and ([\d\s,]+) reviews?/i);
-            const ratingsCount = countMatch ? parseInt(countMatch[1].replace(/[\s,]/g, ''), 10) : 0;
-            const reviewsCount = countMatch ? parseInt(countMatch[2].replace(/[\s,]/g, ''), 10) : 0;
+            // English: "Rated X.X based on YYYYY ratings and ZZZZ reviews"
+            // Russian: "Оценка: X,X. YYYYY оценок. ZZZZ отзывов" or similar
+            const countMatchEn = desc.match(/based on ([\d\s,]+) ratings? and ([\d\s,]+) reviews?/i);
+            const countMatchRu = desc.match(/([\d\s]+)\s*оценок[^.]*[.\s]+([\d\s]+)\s*отзыв/i)
+                              || desc.match(/([\d\s]+)\s*ratings?[^.]*[.\s]+([\d\s]+)\s*reviews?/i);
+            const countMatch   = countMatchEn || countMatchRu;
+            const ratingsCount = countMatch ? parseInt(countMatch[1].replace(/[\s, ]/g, ''), 10) : 0;
+            const reviewsCount = countMatch ? parseInt(countMatch[2].replace(/[\s, ]/g, ''), 10) : 0;
 
-            const ratingMatch = desc.match(/Rated\s+([\d.]+)/i);
-            const rating      = parseFloat(ratingMatch?.[1] ?? '') || null;
+            // English: "Rated X.X" / Russian: "Оценка: X,X" or "Рейтинг X,X"
+            const ratingMatch = desc.match(/Rated\s+([\d.]+)/i)
+                             || desc.match(/(?:Оценка|Рейтинг)[:\s]+([\d,.]+)/i);
+            const rating = parseFloat((ratingMatch?.[1] ?? '').replace(',', '.')) || null;
 
-            // Address: after org type+name in OG title, before "—"
-            const address = title.replace(/^Reviews of [^,]+,\s*/, '').split('—')[0].trim() || null;
+            // Address: strip "Reviews of Name, " (EN) or "Отзывы о «Name» на X, " (RU) prefix
+            const address = title
+                .replace(/^Reviews of [^,]+,\s*/, '')
+                .replace(/^Отзывы о\s+[«"]?[^»"]+[»"]?\s+(?:на|в|по)\s+[^,]+,\s*/i, '')
+                .split('—')[0].trim() || null;
 
             return { name, rating, ratingsCount, reviewsCount, address };
         });
