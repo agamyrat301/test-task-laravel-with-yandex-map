@@ -26,7 +26,8 @@ use Illuminate\Support\Facades\Log;
  */
 class YandexMapsService
 {
-    private const ORG_URL_RE = '#^https?://(?:yandex\.(?:ru|com|kz|by|uz)|maps\.yandex\.ru)/maps/org/[^/]+/(\d+)#i';
+    // Matches both /maps/org/name/id and /maps/213/city/org/name/id (city-code variant)
+    private const ORG_URL_RE = '#^https?://(?:yandex\.(?:ru|com|kz|by|uz|am|az)|maps\.yandex\.ru)/maps/(?:\d+/[^/]+/)?org/[^/]+/(\d+)#i';
 
     // -------------------------------------------------------------------------
     // Public interface
