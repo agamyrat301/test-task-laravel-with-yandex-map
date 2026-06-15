@@ -2,6 +2,12 @@
 
 Стек: **Laravel 10** (API) + **Vue 3** (SPA) + **Tailwind CSS** + **Puppeteer** (парсер).
 
+**Live demo:** http://13.140.130.66:5555
+
+Логин: `admin@example.com` / `password`
+
+Пример URL для проверки: `https://yandex.com/maps/org/yandex/1124715036/`
+
 ---
 
 ## Быстрый старт
